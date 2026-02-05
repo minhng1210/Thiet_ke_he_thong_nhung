@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "stdio.h"
+#include "math.h"
 #include "CLCD_I2C.h"
 /* USER CODE END Includes */
 
@@ -135,7 +136,7 @@ void Read_Humidity() //T1 = 5 D1 = 4 C1 = 0.01
 	HAL_ADC_Stop(&hadc1);
 
 	float Vout = (adc_in0 * 3.3f) / 4095.0f;
-	humidity = (Vout - 0.8f) / 0.031f;
+	humidity = (Vout - 0.4f) / 0.031f;
 }
 
 void Read_Temperature() //T2 = 5 D2 = 4 D2 = 0.01
@@ -146,7 +147,14 @@ void Read_Temperature() //T2 = 5 D2 = 4 D2 = 0.01
 	HAL_ADC_Stop(&hadc2);
 
 	float Vout = (adc_in1 * 3.3f) / 4095.0f;
-	temperature = (Vout - 0.5f) * 100.0f;
+	        float R_pulldown = 10000.0f; // 10k Ohm
+	        float R_ntc = R_pulldown * ((5.3f / Vout) - 1.0f);
+	        float B = 3435.0f;
+	        float R0 = 10000.0f;
+	        float T0 = 298.15f;
+	        float inv_T = (1.0f / T0) + (1.0f / B) * log(R_ntc / R0);
+	        temperature = (1.0f / inv_T) - 273.15f - 12.0f; // Chuyển từ Kelvin sang độ C
+
 }
 
 void Send_Uart() //T3 = 5 D3 = 4 C3 = 0.1
