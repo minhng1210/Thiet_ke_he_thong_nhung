@@ -83,7 +83,11 @@ Task tasks[]={
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define RX_BUF 32
+uint8_t rx_char;
+char cmd_buf[RX_BUF];
+uint8_t cmd_idx = 0;
+volatile uint8_t cmd_flag = 0;
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -189,13 +193,50 @@ void Display_LCD() //T4 = 1 D4 = 0.5 C4 = 0.3
 	CLCD_I2C_WriteString(&LCD1, " C");
 }
 
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if(huart->Instance == USART1)
+    {
+        if(rx_char == '\r' || rx_char == '\n')
+        {
+            cmd_buf[cmd_idx] = 0;
+            cmd_flag = 1;
+            cmd_idx = 0;
+        }
+        else if(cmd_idx < RX_BUF-1)
+        {
+            cmd_buf[cmd_idx++] = rx_char;
+        }
+
+        HAL_UART_Receive_IT(&huart1, &rx_char, 1);
+    }
+}
+
+void Parse_Command()
+{
+    int id, per;
+
+    // format: T0=10
+    if(sscanf(cmd_buf, "T%d=%d", &id, &per) == 2)
+    {
+        if(id >= 0 && id < 4 && per > 0)
+        {
+            __disable_irq();
+            tasks[id].period = per;
+            tasks[id].next = tick + per;
+            __enable_irq();
+        }
+    }
+}
+
+
 void Handle(EventType e)
 {
     switch(e)
     {
         case EV_HUM:  Read_Humidity(); break;
         case EV_TEMP: Read_Temperature(); break;
-        case EV_UART: Send_Uart(); break;
+        case EV_UART:Send_Uart(); break;
         case EV_LCD:  Display_LCD(); break;
         default: break;
     }
@@ -239,12 +280,19 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim1);
   CLCD_I2C_Init(&LCD1, &hi2c1, 0x4e, 16, 2);
+  HAL_UART_Receive_IT(&huart1, &rx_char, 1);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  if(cmd_flag)
+	      {
+	          cmd_flag = 0;
+	          Parse_Command();
+	      }
 	  __disable_irq();
 	  EventType e=pop();
 	  __enable_irq();

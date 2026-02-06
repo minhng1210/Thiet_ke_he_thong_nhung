@@ -41,11 +41,16 @@ typedef struct {
 EDFTask edf[4];
 
 uint32_t tickEDF = 0;
+uint32_t EDF_period = 10;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define RX_BUF 32
+uint8_t rx_char;
+char cmd_buf[RX_BUF];
+uint8_t cmd_idx = 0;
+volatile uint8_t cmd_flag = 0;
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -228,6 +233,43 @@ void EDFScheduler()
     }
 }
 
+void Parse_Command()
+{
+    int id1, id2, per, dead;
+
+    // format: T0=10
+    if(sscanf(cmd_buf, "T%d=%d D%d=%d", &id1, &per, &id2, &dead) == 4)
+    {
+        if(id1 >= 0 && id1 < 4 && id2 >= 0 && id2 < 4 && per > 0 && dead > 0)
+        {
+            __disable_irq();
+            edf[id1].period = per;
+            edf[id2].deadline = dead;
+            __enable_irq();
+        }
+    }
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if(huart->Instance == USART1)
+    {
+        if(rx_char == '\r' || rx_char == '\n')
+        {
+            cmd_buf[cmd_idx] = 0;
+            Parse_Command();
+            cmd_idx = 0;
+        }
+        else if(cmd_idx < RX_BUF-1)
+        {
+            cmd_buf[cmd_idx++] = rx_char;
+        }
+
+        HAL_UART_Receive_IT(&huart1, &rx_char, 1);
+    }
+}
+
+
 /* USER CODE END 0 */
 
 /**
@@ -266,6 +308,7 @@ int main(void)
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim2);
+  HAL_UART_Receive_IT(&huart1, &rx_char, 1);
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -622,7 +665,7 @@ void StartTaskEDF(void *argument)
   /* Infinite loop */
   for(;;)
   {
-	  tick += 10;
+	  tick += EDF_period;
 	  EDFScheduler();
 	  osDelayUntil(tick);
   }
@@ -643,7 +686,7 @@ void StartTaskLCD(void *argument)
   /* Infinite loop */
   for(;;)
   {
-	tick += 1000;
+	tick += EDF_period * edf[3].period;
     Display_LCD();
     osDelayUntil(tick);
   }
@@ -664,7 +707,7 @@ void StartTaskUART(void *argument)
   /* Infinite loop */
   for(;;)
   {
-	  tick += 5000;
+	  tick += EDF_period * edf[2].period;
 	  Send_Uart();
 	  osDelayUntil(tick);
   }
@@ -685,7 +728,7 @@ void StartTaskHumidity(void *argument)
   /* Infinite loop */
   for(;;)
   {
-	  tick += 5000;
+	  tick += EDF_period * edf[0].period;
 	  Read_Humidity();
 	  osDelayUntil(tick);
   }
@@ -706,7 +749,7 @@ void StartTaskTemperature(void *argument)
   /* Infinite loop */
   for(;;)
   {
-	  tick += 5000;
+	  tick += EDF_period * edf[1].period;
 	  Read_Temperature();
 	  osDelayUntil(tick);
   }
