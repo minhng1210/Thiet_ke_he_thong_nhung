@@ -100,6 +100,7 @@ const osThreadAttr_t TaskTemperature_attributes = {
 };
 /* USER CODE BEGIN PV */
 CLCD_I2C_Name LCD1;
+osMutexId_t dataMutex;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -136,7 +137,10 @@ void Read_Humidity() //T1 = 5 D1 = 4 C1 = 0.01
 	HAL_ADC_Stop(&hadc1);
 
 	float Vout = (adc_in0 * 3.3f) / 4095.0f;
-	humidity = (Vout - 0.4f) / 0.031f;
+	float h = (Vout - 0.4f) / 0.031f;
+	osMutexAcquire(dataMutex, osWaitForever);
+	humidity = h;
+	osMutexRelease(dataMutex);
 }
 
 void Read_Temperature() //T2 = 5 D2 = 4 D2 = 0.01
@@ -147,32 +151,45 @@ void Read_Temperature() //T2 = 5 D2 = 4 D2 = 0.01
 	HAL_ADC_Stop(&hadc2);
 
 	float Vout = (adc_in1 * 3.3f) / 4095.0f;
-	        float R_pulldown = 10000.0f; // 10k Ohm
-	        float R_ntc = R_pulldown * ((5.3f / Vout) - 1.0f);
-	        float B = 3435.0f;
-	        float R0 = 10000.0f;
-	        float T0 = 298.15f;
-	        float inv_T = (1.0f / T0) + (1.0f / B) * log(R_ntc / R0);
-	        temperature = (1.0f / inv_T) - 273.15f - 12.0f; // Chuyển từ Kelvin sang độ C
-
+	float R_pulldown = 10000.0f; // 10k Ohm
+	float R_ntc = R_pulldown * ((5.3f / Vout) - 1.0f);
+	float B = 3435.0f;
+	float R0 = 10000.0f;
+	float T0 = 298.15f;
+	float inv_T = (1.0f / T0) + (1.0f / B) * log(R_ntc / R0);
+	float t = (1.0f / inv_T) - 273.15f - 12.0f; // Chuyển từ Kelvin sang độ C
+	osMutexAcquire(dataMutex, osWaitForever);
+	temperature = t;
+	osMutexRelease(dataMutex);
 }
 
 void Send_Uart() //T3 = 5 D3 = 4 C3 = 0.1
 {
-	printf("Humidity: %.1f %%\r\n", humidity);
-	printf("Temperature: %.1f C\r\n", temperature);
+	float h, t;
+	osMutexAcquire(dataMutex, osWaitForever);
+	h = humidity;
+	t = temperature;
+	osMutexRelease(dataMutex);
+	printf("Humidity: %.1f %%\r\n", h);
+	printf("Temperature: %.1f C\r\n", t);
 }
 
 void Display_LCD() //T4 = 1 D4 = 0.5 C4 = 0.3
 {
+	float h, t;
+	osMutexAcquire(dataMutex, osWaitForever);
+	h = humidity;
+	t = temperature;
+	osMutexRelease(dataMutex);
+
 	CLCD_I2C_SetCursor(&LCD1, 0, 0);
 	CLCD_I2C_WriteString(&LCD1, "Hum: ");
-	CLCD_I2C_WriteNumber(&LCD1, humidity, 1);
+	CLCD_I2C_WriteNumber(&LCD1, h, 1);
 	CLCD_I2C_WriteString(&LCD1, " %");
 
 	CLCD_I2C_SetCursor(&LCD1, 0, 1);
 	CLCD_I2C_WriteString(&LCD1, "Temp: ");
-	CLCD_I2C_WriteNumber(&LCD1, temperature, 1);
+	CLCD_I2C_WriteNumber(&LCD1, t, 1);
 	CLCD_I2C_WriteString(&LCD1, " C");
 }
 
@@ -287,10 +304,10 @@ int main(void)
   TaskTemperatureHandle = osThreadNew(StartTaskTemperature, NULL, &TaskTemperature_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
-  edf[0] = (EDFTask){TaskHumidityHandle,    5, 5};
-  edf[1] = (EDFTask){TaskTemperatureHandle, 5, 5};
-  edf[2] = (EDFTask){TaskUARTHandle,        5, 5};
-  edf[3] = (EDFTask){TaskLCDHandle,         1, 1};
+  edf[0] = (EDFTask){TaskHumidityHandle,    500, 400};
+  edf[1] = (EDFTask){TaskTemperatureHandle, 500, 400};
+  edf[2] = (EDFTask){TaskUARTHandle,        500, 400};
+  edf[3] = (EDFTask){TaskLCDHandle,         100, 50};
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
 
